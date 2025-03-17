@@ -28,7 +28,8 @@ CLOSE_PENDING = "CLP" #close pending
 ENTRY_SL = "E" #edit stoplot
 EDIT_SL = "ESL" #edit stoplot
 EDIT_TP = "ETP" # edit tp
-GET = "GET" # lấy all lệnh hiện tại
+GET = "GET"
+GET_ORDERS = "GETO" # lấy all lệnh hiện tại
 GET_DAILY = "GETD" # Lấy lãi lỗ hôm nay
 
 VOLUME = 0.01

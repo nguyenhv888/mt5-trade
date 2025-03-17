@@ -334,6 +334,26 @@ async def move_sl_to_entry(symbol):
     
     return True
 
+async def get_current_price(symbol):
+    """Lấy giá Bid và Ask hiện tại của một symbol và gửi tin nhắn."""
+    if not ensure_mt5_initialized():
+        await send_message("Lỗi kết nối MT5")
+        return
+
+    # Lấy thông tin giá của symbol
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        await send_message(f"Lỗi lấy giá cho {symbol}. Có thể symbol không tồn tại hoặc chưa được kích hoạt.")
+        return
+
+    message = (
+        f"📈 Giá hiện tại của {symbol}:\n"
+        f"🔹 Bid: {tick.bid:.5f}\n"
+        f"🔹 Ask: {tick.ask:.5f}\n"
+        f"🔹 Last: {tick.last:.5f}" if tick.last else "Không có"
+    )
+
+    await send_message(message)
 
 async def handle_message(event):
     """Xử lý tin nhắn nhận từ kênh Telegram."""
@@ -345,7 +365,7 @@ async def handle_message(event):
     command = parts[0].upper()
     try:
         # Lệnh lấy danh sách các lệnh đang mở
-        if command == config.GET:
+        if command == config.GET_ORDERS:
             await get_open_orders()
 
         elif command == config.GET_DAILY:
@@ -359,7 +379,9 @@ async def handle_message(event):
             else:
                 symbol = config.symbols[symbol_key]
 
-            if command == config.ENTRY_SL and len(parts) == 2:
+            if command == config.GET and len(parts) == 2:
+                await get_current_price(symbol)
+            elif command == config.ENTRY_SL and len(parts) == 2:
                 await move_sl_to_entry(symbol)
             elif command == config.CLOSE and len(parts) == 2:
                 await close_orders(symbol)

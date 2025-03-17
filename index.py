@@ -261,11 +261,10 @@ async def get_open_orders():
                          "SELL LIMIT" if order.type == mt5.ORDER_TYPE_SELL_LIMIT else \
                          "BUY STOP" if order.type == mt5.ORDER_TYPE_BUY_STOP else \
                          "SELL STOP" if order.type == mt5.ORDER_TYPE_SELL_STOP else "UNKNOWN"
-            message += f"🔹 Lệnh {order.ticket} - {order.symbol}: {order.volume} lot, Loại {order_type}, Giá {order.price:.5f}\n"
+            message += f"🔹 Lệnh {order.ticket} - {order.symbol}: {order.volume_initial} lot, Loại {order_type}, Giá {order.price:.5f}\n"
 
     await send_message(message)
     return {"positions": positions, "orders": orders}
-
 
 async def check_open_orders(symbol):
     """Kiểm tra có lệnh mở hoặc lệnh chờ nào cho symbol không và trả về số volume đã vào nếu chưa đủ."""

@@ -1,6 +1,6 @@
 import MetaTrader5 as mt5
 from telethon import TelegramClient, events
-from datetime import datetime
+from datetime import datetime, timedelta
 import config
 import logging
 
@@ -205,9 +205,9 @@ async def open_pending_order(symbol, volume, order_type, price, stop_loss=None, 
         if stop_loss is None:
             await send_message("Vui lòng cung cấp stop_loss để tính toán take_profit.")
             return False
-        if order_type == mt5.ORDER_TYPE_BUY_LIMIT | order_type == mt5.ORDER_TYPE_BUY_STOP:
+        if order_type == mt5.ORDER_TYPE_BUY_LIMIT or order_type == mt5.ORDER_TYPE_BUY_STOP:
             take_profit = price + (price - stop_loss) * 2
-        elif order_type == mt5.ORDER_TYPE_SELL_LIMIT | order_type == mt5.ORDER_TYPE_SELL_STOP:
+        elif order_type == mt5.ORDER_TYPE_SELL_LIMIT or order_type == mt5.ORDER_TYPE_SELL_STOP:
             take_profit = price - (stop_loss - price) * 2
 
     request = {
@@ -233,21 +233,38 @@ async def open_pending_order(symbol, volume, order_type, price, stop_loss=None, 
 
 
 async def get_open_orders():
-    """Lấy danh sách các lệnh đang mở và báo cáo lãi/lỗ."""
+    """Lấy danh sách các lệnh đang mở và lệnh chờ, báo cáo lãi/lỗ."""
     if not ensure_mt5_initialized():
         await send_message("Lỗi kết nối MT5")
         return []
 
-    positions = mt5.positions_get()
-    if positions is None or len(positions) == 0:
-        await send_message("Hiện không có lệnh nào đang mở.")
+    positions = mt5.positions_get()  # Lấy lệnh đang mở
+    orders = mt5.orders_get()  # Lấy lệnh chờ
+
+    if (positions is None or len(positions) == 0) and (orders is None or len(orders) == 0):
+        await send_message("Hiện không có lệnh nào đang mở hoặc đang chờ.")
         return []
 
-    message = "Danh sách lệnh đang mở:\n"
-    for pos in positions:
-        message += f"Lệnh {pos.ticket} - {pos.symbol}: Khối lượng {pos.volume}, Lãi/Lỗ {pos.profit:.2f}\n"
+    message = "📊 **Danh sách lệnh đang mở và lệnh chờ:**\n"
+
+    # Hiển thị các lệnh đang mở
+    if positions:
+        message += "\n🔥 **Lệnh đang mở:**\n"
+        for pos in positions:
+            message += f"🔹 Lệnh {pos.ticket} - {pos.symbol}: {pos.volume} lot, Lãi/Lỗ {pos.profit:.2f}\n"
+
+    # Hiển thị các lệnh chờ
+    if orders:
+        message += "\n⏳ **Lệnh chờ:**\n"
+        for order in orders:
+            order_type = "BUY LIMIT" if order.type == mt5.ORDER_TYPE_BUY_LIMIT else \
+                         "SELL LIMIT" if order.type == mt5.ORDER_TYPE_SELL_LIMIT else \
+                         "BUY STOP" if order.type == mt5.ORDER_TYPE_BUY_STOP else \
+                         "SELL STOP" if order.type == mt5.ORDER_TYPE_SELL_STOP else "UNKNOWN"
+            message += f"🔹 Lệnh {order.ticket} - {order.symbol}: {order.volume} lot, Loại {order_type}, Giá {order.price:.5f}\n"
+
     await send_message(message)
-    return positions
+    return {"positions": positions, "orders": orders}
 
 
 async def check_open_orders(symbol):
@@ -270,24 +287,32 @@ async def check_open_orders(symbol):
     # Nếu tổng volume chưa đủ, trả về số volume đã vào, nếu đủ thì trả về 0
     return total_volume
 
-def get_daily_profit():
-    # Kết nối MT5
-    if not mt5.initialize():
-        print("Lỗi kết nối MT5")
-        return None
+async def get_daily_profit():
+    """Lấy tổng lãi/lỗ trong ngày, bao gồm phí sàn và swap."""
     
-    # Lấy thời gian bắt đầu của ngày hiện tại
-    start_of_day = datetime.combine(datetime.today(), datetime.min.time())
-
-    # Lấy danh sách lệnh đã đóng trong ngày
-    history_orders = mt5.history_deals_get(start_of_day)
-
-    if history_orders is None:
-        print("Không có giao dịch nào trong ngày")
+    # Đảm bảo kết nối với MT5
+    if not ensure_mt5_initialized():
+        await send_message("Lỗi kết nối MT5")
         return 0.0
     
+    # Xác định thời gian đầu ngày và cuối ngày
+    start_of_day = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_day = start_of_day + timedelta(days=1)  # Lấy đến cuối ngày
+
+    # Lấy danh sách giao dịch trong ngày
+    history_orders = mt5.history_deals_get(start_of_day, end_of_day)
+
+    # Kiểm tra nếu không có giao dịch
+    if history_orders is None or len(history_orders) == 0:
+        await send_message("📉 Không có giao dịch nào trong ngày.")
+        return 0.0
+
     # Tính tổng lợi nhuận/thua lỗ bao gồm phí sàn và swap
     total_profit = sum(deal.profit + deal.commission + deal.swap for deal in history_orders)
+
+    # Gửi tin nhắn báo cáo
+    message = f"📊 Tổng lãi/lỗ trong ngày: {total_profit:.2f} USD (Đã tính phí & swap)"
+    await send_message(message)
 
     return total_profit
 
@@ -346,11 +371,33 @@ async def get_current_price(symbol):
         await send_message(f"Lỗi lấy giá cho {symbol}. Có thể symbol không tồn tại hoặc chưa được kích hoạt.")
         return
 
+    # Kiểm tra nếu tick.last hợp lệ
+    last_price = f"{tick.last:.5f}" if tick.last is not None and tick.last != 0 else "Không có"
+
     message = (
         f"📈 Giá hiện tại của {symbol}:\n"
         f"🔹 Bid: {tick.bid:.5f}\n"
         f"🔹 Ask: {tick.ask:.5f}\n"
-        f"🔹 Last: {tick.last:.5f}" if tick.last else "Không có"
+        f"🔹 Last: {last_price}"
+    )
+
+    await send_message(message)
+
+async def get_account_balance():
+    """Lấy số dư tài khoản và gửi tin nhắn."""
+    if not ensure_mt5_initialized():
+        await send_message("Lỗi kết nối MT5")
+        return
+
+    # Lấy thông tin tài khoản
+    account_info = mt5.account_info()
+    if account_info is None:
+        await send_message("Lỗi lấy thông tin tài khoản. Kiểm tra kết nối MT5.")
+        return
+
+    message = (
+        f"💰 **Thông tin tài khoản** 💰\n"
+        f"🔹 Số dư (Balance): {account_info.balance:.2f}\n"
     )
 
     await send_message(message)
@@ -370,6 +417,8 @@ async def handle_message(event):
 
         elif command == config.GET_DAILY:
             await get_daily_profit()
+        elif command == config.GET_MONEY:
+            await get_account_balance()
 
         # Các lệnh cần symbol làm tham số thứ 2
         elif len(parts) >= 2:

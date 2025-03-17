@@ -31,5 +31,6 @@ EDIT_TP = "ETP" # edit tp
 GET = "GET"
 GET_ORDERS = "GETO" # lấy all lệnh hiện tại
 GET_DAILY = "GETD" # Lấy lãi lỗ hôm nay
+GET_MONEY = "MONEY"
 
 VOLUME = 0.01

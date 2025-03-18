@@ -233,13 +233,14 @@ async def open_pending_order(symbol, volume, order_type, price, stop_loss=None, 
 
 
 async def get_open_orders():
-    """Lấy danh sách các lệnh đang mở và lệnh chờ, báo cáo lãi/lỗ."""
+    """Lấy danh sách các lệnh đang mở và lệnh chờ, báo cáo lãi/lỗ,
+    giá vào và giá hiện tại của lệnh mở."""
     if not ensure_mt5_initialized():
         await send_message("Lỗi kết nối MT5")
         return []
 
     positions = mt5.positions_get()  # Lấy lệnh đang mở
-    orders = mt5.orders_get()  # Lấy lệnh chờ
+    orders = mt5.orders_get()        # Lấy lệnh chờ
 
     if (positions is None or len(positions) == 0) and (orders is None or len(orders) == 0):
         await send_message("Hiện không có lệnh nào đang mở hoặc đang chờ.")
@@ -251,7 +252,22 @@ async def get_open_orders():
     if positions:
         message += "\n🔥 **Lệnh đang mở:**\n"
         for pos in positions:
-            message += f"🔹 Lệnh {pos.ticket} - {pos.symbol}: {pos.volume} lot, Lãi/Lỗ {pos.profit:.2f}\n"
+            # Lấy giá hiện tại của symbol từ tick
+            tick = mt5.symbol_info_tick(pos.symbol)
+            if tick is None:
+                current_price = "Không xác định"
+            else:
+                # Nếu lệnh mua (BUY) thì giá hiện tại là bid, ngược lại là ask
+                if pos.type == mt5.POSITION_TYPE_BUY:
+                    current_price = tick.bid
+                else:
+                    current_price = tick.ask
+                current_price = f"{current_price:.5f}"
+            message += (
+                f"🔹 Lệnh {pos.ticket} - {pos.symbol}: {pos.volume} lot, "
+                f"Giá vào {pos.price_open:.5f}, Giá hiện tại {current_price}, "
+                f"Lãi/Lỗ {pos.profit:.2f}\n"
+            )
 
     # Hiển thị các lệnh chờ
     if orders:
@@ -261,11 +277,13 @@ async def get_open_orders():
                          "SELL LIMIT" if order.type == mt5.ORDER_TYPE_SELL_LIMIT else \
                          "BUY STOP" if order.type == mt5.ORDER_TYPE_BUY_STOP else \
                          "SELL STOP" if order.type == mt5.ORDER_TYPE_SELL_STOP else "UNKNOWN"
-            message += f"🔹 Lệnh {order.ticket} - {order.symbol}: {order.volume_initial} lot, Loại {order_type}, Giá {order.price_open:.5f}\n"
+            message += (
+                f"🔹 Lệnh {order.ticket} - {order.symbol}: {order.volume_initial} lot, "
+                f"Loại {order_type}, Giá {order.price_open:.5f}\n"
+            )
 
     await send_message(message)
     return {"positions": positions, "orders": orders}
-
 async def check_open_orders(symbol):
     """Kiểm tra có lệnh mở hoặc lệnh chờ nào cho symbol không và trả về số volume đã vào nếu chưa đủ."""
     if not ensure_mt5_initialized():

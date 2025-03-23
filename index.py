@@ -264,9 +264,12 @@ async def get_open_orders():
                     current_price = tick.ask
                 current_price = f"{current_price:.5f}"
             message += (
-                f"🔹 Lệnh {pos.ticket} - {pos.symbol}: {pos.volume} lot, "
-                f"Giá vào {pos.price_open:.5f}, Giá hiện tại {current_price}, "
-                f"Lãi/Lỗ {pos.profit:.2f}\n"
+                f"🔹 Lệnh {pos.ticket} - {pos.symbol}: {pos.volume} lot\n"
+                f"   - Giá vào: {pos.price_open:.5f}\n"
+                f"   - Giá hiện tại: {current_price}\n"
+                f"   - Stop Loss: {pos.sl:.5f}\n"
+                f"   - Take Profit: {pos.tp:.5f}\n"
+                f"   - Lãi/Lỗ: {pos.profit:.2f}\n"
             )
 
     # Hiển thị các lệnh chờ

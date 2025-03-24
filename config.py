@@ -24,6 +24,7 @@ SELL_STOP = "SS" # sell stop
 
 # Cấu hình loại giao dịch
 CLOSE = "CL" #close
+CLOSE_TICKET = "CLT" #close
 CLOSE_PENDING = "CLP" #close pending
 ENTRY_SL = "E" #edit stoplot
 EDIT_SL = "ESL" #edit stoplot
@@ -34,3 +35,4 @@ GET_DAILY = "GETD" # Lấy lãi lỗ hôm nay
 GET_MONEY = "MONEY"
 
 VOLUME = 0.01
+TOTAL_VOLUME = 0.02

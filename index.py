@@ -237,21 +237,31 @@ async def close_order_by_ticket(ticket):
         await send_message("Lỗi kết nối MT5")
         return False
 
-    # Lấy thông tin của lệnh đang mở
-    position = None
+    # Lấy danh sách lệnh đang mở
     positions = mt5.positions_get()
-    if positions:
-        for pos in positions:
-            if pos.ticket == ticket:
-                position = pos
-                break
+    if positions is None:
+        await send_message("⚠️ Không thể lấy danh sách lệnh. Có thể MT5 chưa khởi tạo hoặc không có quyền truy cập.")
+        return False
+    if len(positions) == 0:
+        await send_message("⚠️ Không có lệnh nào đang mở.")
+        return False
 
+    # Kiểm tra xem ticket có tồn tại không
+    all_tickets = [pos.ticket for pos in positions]
+    await send_message(f"📌 Các ticket hiện tại: {all_tickets}")
+    
+    position = next((pos for pos in positions if str(pos.ticket) == str(ticket)), None)
     if position is None:
-        await send_message(f"Lệnh với ticket {ticket} không tồn tại hoặc đã đóng.")
+        await send_message(f"⚠️ Ticket {ticket} không tồn tại trong danh sách lệnh đang mở!")
         return False
 
     # Xác định loại lệnh để đóng (BUY hoặc SELL)
     order_type = mt5.ORDER_TYPE_SELL if position.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
+    price = mt5.symbol_info_tick(position.symbol).bid if order_type == mt5.ORDER_TYPE_SELL else mt5.symbol_info_tick(position.symbol).ask
+    
+    if price is None:
+        await send_message(f"⚠️ Không thể lấy giá thị trường cho {position.symbol}.")
+        return False
 
     # Tạo request đóng lệnh
     request = {
@@ -260,7 +270,7 @@ async def close_order_by_ticket(ticket):
         "volume": position.volume,
         "type": order_type,
         "position": position.ticket,
-        "price": mt5.symbol_info_tick(position.symbol).bid if order_type == mt5.ORDER_TYPE_SELL else mt5.symbol_info_tick(position.symbol).ask,
+        "price": price,
         "deviation": 10,
         "magic": 0,
         "comment": "Close order",
@@ -268,13 +278,15 @@ async def close_order_by_ticket(ticket):
 
     # Gửi lệnh đóng lệnh
     result = mt5.order_send(request)
-    if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-        await send_message(f"Lỗi đóng lệnh {ticket}: {result.comment if result else 'Không có phản hồi từ MT5'}")
+    if result is None:
+        await send_message(f"⚠️ Không có phản hồi từ MT5 khi đóng lệnh {ticket}.")
+        return False
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        await send_message(f"⚠️ Lỗi khi đóng lệnh {ticket}: {result.comment}")
         return False
 
     await send_message(f"✅ Đã đóng lệnh {ticket} thành công.")
     return True
-
 async def get_open_orders():
     """Lấy danh sách các lệnh đang mở và lệnh chờ, báo cáo lãi/lỗ,
     giá vào và giá hiện tại của lệnh mở."""
@@ -510,8 +522,9 @@ async def handle_message(event):
                 await modify_orders_by_symbol(symbol, take_profit=value)
 
             elif command in [config.BUY, config.SELL]:
-                vol = config.VOLUME - await check_open_orders(symbol)
-                if vol == 0:
+                vol = config.VOLUME
+                total = config.TOTAL_VOLUME - await check_open_orders(symbol)
+                if total <= 0:
                     await send_message(f"Có lệnh {symbol} rồi, không vào nữa!")
                     return
                 order_type = config.order_types[command]
@@ -526,7 +539,7 @@ async def handle_message(event):
                     await open_market_order(symbol, vol, order_type, stop_loss=sl, take_profit=tp)
 
             elif command in [config.BUY_LIMIT, config.BUY_STOP, config.SELL_LIMIT, config.SELL_STOP]:
-                vol = config.VOLUME  - await check_open_orders(symbol)
+                vol = config.VOLUME
                 total = config.TOTAL_VOLUME - await check_open_orders(symbol)
                 if total <= 0:
                     await send_message(f"Vào quá nhiều {symbol} rồi, không vào nữa!")

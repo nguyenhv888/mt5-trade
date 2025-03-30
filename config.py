@@ -34,5 +34,5 @@ GET_ORDERS = "GETO" # lấy all lệnh hiện tại
 GET_DAILY = "GETD" # Lấy lãi lỗ hôm nay
 GET_MONEY = "MONEY"
 
-VOLUME = 0.01
-TOTAL_VOLUME = 0.02
+VOLUME = 0.02
+TOTAL_VOLUME = 0.04

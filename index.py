@@ -477,6 +477,19 @@ async def get_account_balance():
 
     await send_message(message)
 
+async def checkIsGreedy(symbol):
+
+    total = config.TOTAL_VOLUME - await check_open_orders(symbol)
+    if total <= 0:
+        await send_message(f"Có lệnh {symbol} rồi, không vào nữa!")
+        return True
+    sum = get_daily_profit()
+    tsl = -1 * config.VOLUME * 2000
+    if sum <= tsl:
+        await send_message(f"Âm quá nhiều rồi, dừng lại đi!")
+        return True
+    return False
+
 async def handle_message(event):
     """Xử lý tin nhắn nhận từ kênh Telegram."""
     message_text = event.message.message.lower()
@@ -523,9 +536,8 @@ async def handle_message(event):
 
             elif command in [config.BUY, config.SELL]:
                 vol = config.VOLUME
-                total = config.TOTAL_VOLUME - await check_open_orders(symbol)
-                if total <= 0:
-                    await send_message(f"Có lệnh {symbol} rồi, không vào nữa!")
+                isGreedy = checkIsGreedy(symbol)
+                if isGreedy:
                     return
                 order_type = config.order_types[command]
                 if len(parts) == 2:
@@ -540,9 +552,8 @@ async def handle_message(event):
 
             elif command in [config.BUY_LIMIT, config.BUY_STOP, config.SELL_LIMIT, config.SELL_STOP]:
                 vol = config.VOLUME
-                total = config.TOTAL_VOLUME - await check_open_orders(symbol)
-                if total <= 0:
-                    await send_message(f"Vào quá nhiều {symbol} rồi, không vào nữa!")
+                isGreedy = checkIsGreedy(symbol)
+                if isGreedy:
                     return
                 order_type = config.order_types[command]
                 if len(parts) == 4:

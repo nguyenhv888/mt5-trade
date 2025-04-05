@@ -13,7 +13,7 @@ API_HASH = "2954f927fdb47a6783874cf3c21e67ce"
 PRIVATE_CHANNEL_LINK = "https://t.me/+yzWYZh8wjc5kYTZl"  # Channel tín hiệu
 
 # Khởi tạo client Telegram
-client = TelegramClient("ThanhVan", API_ID, API_HASH)
+client = TelegramClient("HoangNguyen66688", API_ID, API_HASH)
 
 async def send_message(message):
     """Gửi tin nhắn đến channel lỗi."""

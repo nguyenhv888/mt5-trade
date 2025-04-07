@@ -13,7 +13,7 @@ API_HASH = "2954f927fdb47a6783874cf3c21e67ce"
 PRIVATE_CHANNEL_LINK = "https://t.me/+yzWYZh8wjc5kYTZl"  # Channel tín hiệu
 
 # Khởi tạo client Telegram
-client = TelegramClient("HoangNguyen66688", API_ID, API_HASH)
+client = TelegramClient("HoangNguyen888", API_ID, API_HASH)
 
 async def send_message(message):
     """Gửi tin nhắn đến channel lỗi."""
@@ -117,41 +117,76 @@ async def modify_orders_by_symbol(symbol, stop_loss=None, take_profit=None):
     return success_count > 0
 
 
-async def close_partial_order(symbol, ticket, volume):
-    """Đóng một phần lệnh theo ticket và báo cáo lãi/lỗ."""
+async def close_order_by_ticket_volume(ticket, close_volume):
+    # 1. Kiểm tra kết nối MT5
     if not ensure_mt5_initialized():
         await send_message("Lỗi kết nối MT5")
         return False
-
-    orders = mt5.positions_get(ticket=ticket)
-    if orders is None or len(orders) == 0:
-        await send_message(f"Không tìm thấy lệnh {ticket}.")
-        return False
-
-    order = orders[0]
-    if volume > order.volume:
-        await send_message("Khối lượng đóng lớn hơn khối lượng lệnh.")
-        return False
-
-    request = {
-        "action": mt5.TRADE_ACTION_DEAL,
-        "symbol": symbol,
-        "volume": volume,
-        "type": mt5.ORDER_TYPE_SELL if order.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY,
-        "position": ticket,
-        "deviation": 10,
-        "magic": 0,
-        "comment": "Partial close",
-    }
     
-    result = mt5.order_send(request)
-    if result.retcode != mt5.TRADE_RETCODE_DONE:
-        await send_message(f"Lỗi đóng một phần lệnh {ticket}: {result.comment}")
+    positions = mt5.positions_get()
+    if positions is None:
+        await send_message("⚠️ Không thể lấy danh sách lệnh. Có thể MT5 chưa khởi tạo hoặc không có quyền truy cập.")
+        return False
+    if len(positions) == 0:
+        await send_message("⚠️ Không có lệnh nào đang mở.")
+        return False
+    # 2. Lấy vị thế đang mở theo ticket
+    all_tickets = [pos.ticket for pos in positions]
+    await send_message(f"📌 Các ticket hiện tại: {all_tickets}")
+    
+    position = next((pos for pos in positions if str(pos.ticket) == str(ticket)), None)
+    if position is None:
+        await send_message(f"⚠️ Không tìm thấy vị thế với ticket {ticket}.")
         return False
 
-    await send_message(f"Đã đóng một phần {volume} của lệnh {ticket} ({symbol}). Lãi/lỗ: {order.profit:.2f}")
-    return True
+    # 3. Kiểm tra close_volume hợp lệ
+    if close_volume <= 0:
+        await send_message("⚠️ Khối lượng đóng phải lớn hơn 0.")
+        return False
+    if close_volume > position.volume:
+        await send_message(f"⚠️ Khối lượng đóng ({close_volume}) lớn hơn khối lượng hiện tại ({position.volume}).")
+        return False
 
+    # 4. Xác định loại lệnh đóng (BUY->SELL, SELL->BUY)
+    close_type = (mt5.ORDER_TYPE_SELL 
+                  if position.type == mt5.POSITION_TYPE_BUY 
+                  else mt5.ORDER_TYPE_BUY)
+
+    # 5. Lấy giá thị trường để đóng
+    tick = mt5.symbol_info_tick(position.symbol)
+    if tick is None:
+        await send_message(f"⚠️ Không lấy được giá thị trường cho {position.symbol}.")
+        return False
+    price = tick.bid if close_type == mt5.ORDER_TYPE_SELL else tick.ask
+
+    # 6. Tạo request đóng một phần
+    request = {
+        "action":    mt5.TRADE_ACTION_DEAL,
+        "symbol":    position.symbol,
+        "volume":    close_volume,
+        "type":      close_type,
+        "position":  position.ticket,
+        "price":     price,
+        "deviation": 10,
+        "magic":     position.magic,
+        "comment":   f"Partial close {close_volume}",
+    }
+
+    # 7. Gửi lệnh và xử lý kết quả
+    result = mt5.order_send(request)
+    if result is None:
+        await send_message(f"⚠️ Không có phản hồi từ MT5 khi đóng ticket {ticket}.")
+        return False
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        await send_message(f"⚠️ Lỗi khi đóng ticket {ticket}: {result.comment}")
+        return False
+
+    await send_message(
+        f"✅ Đã đóng {close_volume} lot của ticket {ticket} thành công.\n"
+        f"   • Giá đóng: {price:.5f}\n"
+        f"   • Còn lại: {position.volume - close_volume:.2f} lot"
+    )
+    return True
 
 async def open_market_order(symbol, volume, order_type, stop_loss=None, take_profit=None):
     """Mở lệnh thị trường tại giá hiện tại."""
@@ -293,7 +328,7 @@ async def get_open_orders():
     if not ensure_mt5_initialized():
         await send_message("Lỗi kết nối MT5")
         return []
-
+    await get_daily_profit()
     positions = mt5.positions_get()  # Lấy lệnh đang mở
     orders = mt5.orders_get()        # Lấy lệnh chờ
 
@@ -369,7 +404,7 @@ async def get_daily_profit():
     if not ensure_mt5_initialized():
         await send_message("Lỗi kết nối MT5")
         return 0.0
-    
+    await get_account_balance()
     # Xác định thời gian đầu ngày và cuối ngày
     start_of_day = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = start_of_day + timedelta(days=1)  # Lấy đến cuối ngày
@@ -483,8 +518,8 @@ async def checkIsGreedy(symbol):
     if total <= 0:
         await send_message(f"Có lệnh {symbol} rồi, không vào nữa!")
         return True
-    sum = get_daily_profit()
-    tsl = -1 * config.VOLUME * 2000
+    sum = await get_daily_profit()
+    tsl = -1 * config.TOTAL_VOLUME * 2000
     if sum <= tsl:
         await send_message(f"Âm quá nhiều rồi, dừng lại đi!")
         return True
@@ -524,6 +559,9 @@ async def handle_message(event):
                 await close_orders(symbol)
             elif command == config.CLOSE_TICKET and len(parts) == 2:
                 await close_order_by_ticket(symbol)
+            elif command == config.CLOSE_TICKET and len(parts) == 3:
+                volum = float(parts[2])
+                await close_order_by_ticket_volume(symbol, volum)
             elif command == config.CLOSE_PENDING and len(parts) == 2:
                 await close_pending_orders(symbol)
             elif command == config.EDIT_SL and len(parts) == 3:
@@ -536,7 +574,7 @@ async def handle_message(event):
 
             elif command in [config.BUY, config.SELL]:
                 vol = config.VOLUME
-                isGreedy = checkIsGreedy(symbol)
+                isGreedy = await checkIsGreedy(symbol)
                 if isGreedy:
                     return
                 order_type = config.order_types[command]
@@ -549,10 +587,15 @@ async def handle_message(event):
                     sl = float(parts[2])
                     tp = float(parts[3])
                     await open_market_order(symbol, vol, order_type, stop_loss=sl, take_profit=tp)
+                elif len(parts) == 5:
+                    vol = float(parts[2])
+                    sl = float(parts[3])
+                    tp = float(parts[4])
+                    await open_market_order(symbol, vol, order_type, stop_loss=sl, take_profit=tp)
 
             elif command in [config.BUY_LIMIT, config.BUY_STOP, config.SELL_LIMIT, config.SELL_STOP]:
                 vol = config.VOLUME
-                isGreedy = checkIsGreedy(symbol)
+                isGreedy = await checkIsGreedy(symbol)
                 if isGreedy:
                     return
                 order_type = config.order_types[command]
